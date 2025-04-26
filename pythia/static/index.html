@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Protein Mutation Prediction</title>
+    <script src="https://3Dmol.csb.pitt.edu/build/3Dmol-min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+            background-color: #f8f9fa;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        form {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            max-width: 500px;
+            margin: auto;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        input[type="file"], label {
+            display: block;
+            width: 100%;
+            margin-top: 10px;
+        }
+        button {
+            margin-top: 20px;
+            width: 100%;
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #viewer {
+            width: 100%;
+            height: 400px;
+            margin-top: 30px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            background-color: white;
+        }
+        #result {
+            margin-top: 20px;
+            text-align: center;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        .loading {
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Protein Mutation Prediction</h1>
+
+    <form id="upload-form" enctype="multipart/form-data">
+        <label>Upload PDB File:</label>
+        <input type="file" name="pdb_file" required>
+
+        <label><input type="checkbox" name="apply_correction" checked> Apply MBC Correction</label>
+
+        <button type="submit">Predict</button>
+    </form>
+
+    <div id="result"></div>
+    <div id="viewer"></div>
+
+    <script>
+    const form = document.getElementById('upload-form');
+    const resultDiv = document.getElementById('result');
+    const viewerDiv = document.getElementById('viewer');
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        resultDiv.innerHTML = '<div class="loading">Processing... Please wait.</div>';
+        viewerDiv.innerHTML = '';
+
+        const formData = new FormData(form);
+
+        formData.append('plddt_filter', false);
+        formData.append('plddt_cutoff', 95.0);
+
+        try {
+            const response = await fetch('/predict', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            if (result.error) {
+                resultDiv.innerHTML = `<div class="error">${result.error}</div>`;
+                return;
+            }
+
+            const baseUrl = window.location.origin;
+            const viewer = $3Dmol.createViewer("viewer", {backgroundColor: "white"});
+            viewer.addModelURI(baseUrl + result.pdb_path, "pdb");
+            viewer.setStyle({}, {cartoon: {color: 'spectrum'}});
+            viewer.zoomTo();
+            viewer.render();
+
+            resultDiv.innerHTML = `<a href='${result.csv_path}' target='_blank'>Download Prediction CSV</a>`;
+
+        } catch (error) {
+            console.error(error);
+            resultDiv.innerHTML = `<div class="error">An error occurred: ${error.message}</div>`;
+        }
+    });
+
+    </script>
+
+</body>
+</html>
