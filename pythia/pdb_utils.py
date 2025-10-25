@@ -6,8 +6,10 @@ import torch
 import torch.nn.functional as F
 from Bio.PDB import FastMMCIFParser, PDBParser
 from Bio.PDB.Polypeptide import three_to_index
+from joblib import Parallel, delayed
 from torch import Tensor
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 
 class ProtBB:
@@ -63,71 +65,74 @@ def read_pdb_to_protbb(pdb_file: str):
     chains = []
     bb_ang = []
     sasa = []
+    structure = None
     try:
         if pdb_file.endswith(".pdb"):
             parser = PDBParser(QUIET=True)
             structure = parser.get_structure("x", pdb_file)[0]
-        if pdb_file.endswith(".cif"):
+        elif pdb_file.endswith(".cif"):
             cif_parser = FastMMCIFParser(QUIET=True)
             structure = cif_parser.get_structure("x", pdb_file)[0]
-        if pdb_file.endswith(".pdb.gz"):
+        elif pdb_file.endswith(".pdb.gz"):
             with gzip.open(pdb_file, "rt") as f:
                 parser = PDBParser(QUIET=True)
                 structure = parser.get_structure("x", f)[0]
     except:
         print(pdb_file)
-    structure.atom_to_internal_coordinates()
-    chain_dict = {}
-    for chain in structure.get_chains():
-        if chain.id not in chain_dict:
-            chain_dict[chain.id] = len(chain_dict)
-        chain_id = chain_dict[chain.id]
-        for residue in chain.get_residues():
-            if (
-                "N" in residue and "C" in residue and "O" in residue and "CA" in residue
-            ) and residue.id[0] == " ":
-                try:
-                    cb = residue["CB"].coord
-                except:
-                    b = residue["CA"].coord - residue["N"].coord
-                    c_ = residue["C"].coord - residue["CA"].coord
-                    a = np.cross(b, c_)
-                    cb = (
-                        -0.58273431 * a
-                        + 0.56802827 * b
-                        - 0.54067466 * c_
-                        + residue["CA"].coord
+        return None
+    if structure is not None:
+        structure.atom_to_internal_coordinates()
+        chain_dict = {}
+        for chain in structure.get_chains():
+            if chain.id not in chain_dict:
+                chain_dict[chain.id] = len(chain_dict)
+            chain_id = chain_dict[chain.id]
+            for residue in chain.get_residues():
+                if (
+                    "N" in residue and "C" in residue and "O" in residue and "CA" in residue
+                ) and residue.id[0] == " ":
+                    try:
+                        cb = residue["CB"].coord
+                    except:
+                        b = residue["CA"].coord - residue["N"].coord
+                        c_ = residue["C"].coord - residue["CA"].coord
+                        a = np.cross(b, c_)
+                        cb = (
+                            -0.58273431 * a
+                            + 0.56802827 * b
+                            - 0.54067466 * c_
+                            + residue["CA"].coord
+                        )
+                    chains.append([chain_id])
+                    cas.append(residue["CA"].coord)
+                    cbs.append(cb)
+                    cs.append(residue["C"].coord)
+                    os.append(residue["O"].coord)
+                    ns.append(residue["N"].coord)
+                    resseqs.append([residue.full_id[3][1]])
+                    try:
+                        tok_id = three_to_index(residue.get_resname())
+                    except:
+                        tok_id = 20
+                    seqs.append([tok_id])
+                    ric = residue.internal_coord
+                    phi = ric.get_angle("phi")
+                    psi = ric.get_angle("psi")
+                    omg = ric.get_angle("omg")
+                    if phi == None:
+                        phi = 0
+                    if psi == None:
+                        psi = 0
+                    if omg == None:
+                        omg = 0
+                    bb_ang.append(
+                        np.concatenate(
+                            [
+                                np.sin(np.deg2rad([phi, psi, omg])),
+                                np.cos(np.deg2rad([phi, psi, omg])),
+                            ]
+                        )
                     )
-                chains.append([chain_id])
-                cas.append(residue["CA"].coord)
-                cbs.append(cb)
-                cs.append(residue["C"].coord)
-                os.append(residue["O"].coord)
-                ns.append(residue["N"].coord)
-                resseqs.append([residue.full_id[3][1]])
-                try:
-                    tok_id = three_to_index(residue.get_resname())
-                except:
-                    tok_id = 20
-                seqs.append([tok_id])
-                ric = residue.internal_coord
-                phi = ric.get_angle("phi")
-                psi = ric.get_angle("psi")
-                omg = ric.get_angle("omg")
-                if phi == None:
-                    phi = 0
-                if psi == None:
-                    psi = 0
-                if omg == None:
-                    omg = 0
-                bb_ang.append(
-                    np.concatenate(
-                        [
-                            np.sin(np.deg2rad([phi, psi, omg])),
-                            np.cos(np.deg2rad([phi, psi, omg])),
-                        ]
-                    )
-                )
     return ProtBB(cas, cbs, cs, os, ns, seqs, resseqs, chains, bb_ang, sasa)
 
 
@@ -285,8 +290,9 @@ def save_all(all_pdbs):
         delayed(parallel_converter)(pdb) for pdb in tqdm(all_pdbs)
     )
     for pdb, protbb in zip(all_pdbs, all_Protbb):
-        with open(f"{pdb}.pkl", "wb") as ofile:
-            pickle.dump(protbb, ofile)
+        if protbb is not None:
+            with open(f"{pdb}.pkl", "wb") as ofile:
+                pickle.dump(protbb, ofile)
 
 
 class myDataset(Dataset):
@@ -348,9 +354,7 @@ class myDataset(Dataset):
 if __name__ == "__main__":
     import glob
 
-    from joblib import Parallel, delayed
     from model import AMPNN
-    from tqdm import tqdm
 
     all_pdbs = glob.glob("/data3/jsun/dompdb/clean/*.pdb")
     save_all(all_pdbs)
