@@ -6,8 +6,10 @@ import torch
 import torch.nn.functional as F
 from Bio.PDB import FastMMCIFParser, PDBParser
 from Bio.PDB.Polypeptide import three_to_index
+from joblib import Parallel, delayed
 from torch import Tensor
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 
 class ProtBB:
@@ -76,7 +78,9 @@ def read_pdb_to_protbb(pdb_file: str):
                 structure = parser.get_structure("x", f)[0]
     except:
         print(pdb_file)
-    structure.atom_to_internal_coordinates()
+        return None
+    if "structure" in locals():
+        structure.atom_to_internal_coordinates()
     chain_dict = {}
     for chain in structure.get_chains():
         if chain.id not in chain_dict:
@@ -348,9 +352,7 @@ class myDataset(Dataset):
 if __name__ == "__main__":
     import glob
 
-    from joblib import Parallel, delayed
     from model import AMPNN
-    from tqdm import tqdm
 
     all_pdbs = glob.glob("/data3/jsun/dompdb/clean/*.pdb")
     save_all(all_pdbs)
