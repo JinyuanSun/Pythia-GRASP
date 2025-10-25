@@ -65,21 +65,22 @@ def read_pdb_to_protbb(pdb_file: str):
     chains = []
     bb_ang = []
     sasa = []
+    structure = None
     try:
         if pdb_file.endswith(".pdb"):
             parser = PDBParser(QUIET=True)
             structure = parser.get_structure("x", pdb_file)[0]
-        if pdb_file.endswith(".cif"):
+        elif pdb_file.endswith(".cif"):
             cif_parser = FastMMCIFParser(QUIET=True)
             structure = cif_parser.get_structure("x", pdb_file)[0]
-        if pdb_file.endswith(".pdb.gz"):
+        elif pdb_file.endswith(".pdb.gz"):
             with gzip.open(pdb_file, "rt") as f:
                 parser = PDBParser(QUIET=True)
                 structure = parser.get_structure("x", f)[0]
     except:
         print(pdb_file)
         return None
-    if "structure" in locals():
+    if structure is not None:
         structure.atom_to_internal_coordinates()
     chain_dict = {}
     for chain in structure.get_chains():
@@ -289,8 +290,9 @@ def save_all(all_pdbs):
         delayed(parallel_converter)(pdb) for pdb in tqdm(all_pdbs)
     )
     for pdb, protbb in zip(all_pdbs, all_Protbb):
-        with open(f"{pdb}.pkl", "wb") as ofile:
-            pickle.dump(protbb, ofile)
+        if protbb is not None:
+            with open(f"{pdb}.pkl", "wb") as ofile:
+                pickle.dump(protbb, ofile)
 
 
 class myDataset(Dataset):
