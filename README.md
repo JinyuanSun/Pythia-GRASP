@@ -1,5 +1,5 @@
 # Pythia
-A series of models for protein related tasks, including zero-shot [protein stability prediction](pythia/), [ligand binding pocket prediction](pythia-pocket/).
+A series of models for protein related tasks, including zero-shot [protein stability prediction](pythia/), [ligand binding pocket prediction](pythia-pocket/), and [protein backbone energy minimization](docs/energy_minimization.md).
 
 ## Installation
 
@@ -20,6 +20,14 @@ Lower the score is better.
 ```bash
 python3 pythia/score.py
 ```
+
+## Protein Backbone Energy Minimization
+Optimize protein backbone structures using Pythia's likelihood scoring.
+```bash
+PYTHONPATH=. python3 pythia/energy_minimize.py --pdb_file examples/1pga.pdb --device cpu
+```
+
+See [detailed documentation](docs/energy_minimization.md) for more options and usage examples.
 
 ## Citation
 ```text
