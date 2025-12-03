@@ -16,7 +16,10 @@ from copy import deepcopy
 
 from pythia.masked_ddg_scan import get_torch_model, pythia_root_dpath
 from pythia.pdb_utils import get_neighbor, read_pdb_to_protbb, ProtBB
-from Bio.PDB import PDBIO
+from Bio.PDB import PDBIO, PDBParser
+
+# Constants
+NOISE_LEVEL_FOR_SCORING = 0.0  # No noise when scoring structures
 
 
 def compute_rmsd(coords1: np.ndarray, coords2: np.ndarray) -> float:
@@ -114,7 +117,7 @@ def score_structure(models: List, protbb: ProtBB, device: str) -> float:
     Returns:
         Negative log-likelihood score (lower is better)
     """
-    node, edge, native_seq = get_neighbor(protbb, noise_level=0.00)
+    node, edge, native_seq = get_neighbor(protbb, noise_level=NOISE_LEVEL_FOR_SCORING)
     score = 0.0
     
     for model in models:
@@ -138,6 +141,8 @@ def minimize_energy(
     rotation_std: float = 0.05,
     max_rmsd: float = 2.0,
     convergence_threshold: float = 1e-4,
+    acceptance_prob_worse: float = 0.1,
+    max_consecutive_rejections: int = 50,
     output_file: Optional[str] = None,
 ) -> Tuple[ProtBB, float, int]:
     """
@@ -152,6 +157,8 @@ def minimize_energy(
         rotation_std: Standard deviation for rotation noise (radians)
         max_rmsd: Maximum allowed RMSD from initial structure
         convergence_threshold: Threshold for score change to declare convergence
+        acceptance_prob_worse: Probability of accepting worse solutions
+        max_consecutive_rejections: Maximum consecutive rejections before stopping
         output_file: Path to save optimized structure (optional)
     
     Returns:
@@ -172,6 +179,8 @@ def minimize_energy(
     
     accepted_count = 0
     improved_count = 0
+    consecutive_rejections = 0
+    actual_iterations = 0
     
     # Optimization loop
     for iteration in range(max_iterations):
@@ -188,6 +197,11 @@ def minimize_energy(
         
         if rmsd > max_rmsd:
             # Reject perturbation if it violates RMSD constraint
+            consecutive_rejections += 1
+            if consecutive_rejections >= max_consecutive_rejections:
+                print(f"Stopping: {consecutive_rejections} consecutive rejections (RMSD constraint)")
+                actual_iterations = iteration + 1
+                break
             continue
         
         # Score perturbed structure
@@ -201,7 +215,7 @@ def minimize_energy(
             # Accept improvement
             accept = True
             improved_count += 1
-        elif np.random.rand() < 0.1:
+        elif np.random.rand() < acceptance_prob_worse:
             # Occasionally accept worse solutions to escape local minima
             accept = True
         
@@ -209,6 +223,7 @@ def minimize_energy(
             current_protbb = perturbed_protbb
             current_score = perturbed_score
             accepted_count += 1
+            consecutive_rejections = 0
             
             if current_score < best_score:
                 improvement = best_score - current_score
@@ -222,19 +237,29 @@ def minimize_energy(
                 # Check convergence
                 if improvement < convergence_threshold and iteration > 10:
                     print(f"Converged after {iteration + 1} iterations")
+                    actual_iterations = iteration + 1
                     break
+        else:
+            consecutive_rejections += 1
+            if consecutive_rejections >= max_consecutive_rejections:
+                print(f"Stopping: {consecutive_rejections} consecutive rejections")
+                actual_iterations = iteration + 1
+                break
+    else:
+        # Loop completed without breaking
+        actual_iterations = max_iterations
     
     print(f"\nFinal score: {best_score:.4f}")
     print(f"Score improvement: {initial_score - best_score:.4f}")
-    print(f"Total accepted moves: {accepted_count}/{max_iterations}")
-    print(f"Improved moves: {improved_count}/{max_iterations}")
+    print(f"Total accepted moves: {accepted_count}/{actual_iterations}")
+    print(f"Improved moves: {improved_count}/{actual_iterations}")
     
     # Save optimized structure if requested
     if output_file:
         save_protbb_to_pdb(best_protbb, initial_protbb, pdb_file, output_file)
         print(f"Saved optimized structure to {output_file}")
     
-    return best_protbb, best_score, iteration + 1
+    return best_protbb, best_score, actual_iterations
 
 
 def save_protbb_to_pdb(
@@ -252,8 +277,6 @@ def save_protbb_to_pdb(
         reference_pdb: Path to reference PDB file
         output_file: Path to output PDB file
     """
-    from Bio.PDB import PDBParser, PDBIO
-    
     # Read reference structure to get residue information
     parser = PDBParser(QUIET=True)
     ref_structure = parser.get_structure("ref", reference_pdb)

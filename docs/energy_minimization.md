@@ -15,10 +15,12 @@ The energy minimization algorithm works as follows:
 
 ## Usage
 
+**Note**: All commands assume you are in the Pythia-GRASP root directory.
+
 ### Basic Usage
 
 ```bash
-cd /path/to/Pythia-GRASP
+# From the Pythia-GRASP root directory
 PYTHONPATH=. python3 pythia/energy_minimize.py --pdb_file examples/1pga.pdb --device cpu
 ```
 
